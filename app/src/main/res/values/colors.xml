@@ -1,0 +1,11 @@
+<resources>
+    <color name="ink">#FF161A30</color>
+    <color name="paper">#FFF3F4FA</color>
+    <color name="amber">#FFF4B860</color>
+    <color name="amber_ink">#FF2B1A00</color>
+    <color name="moon">#FFEDEAF6</color>
+    <color name="mist">#FFC9CDE8</color>
+    <color name="night_band">#FF3A4170</color>
+    <color name="widget_bg">#F2161A30</color>
+    <color name="ic_launcher_bg">#FF161A30</color>
+</resources>

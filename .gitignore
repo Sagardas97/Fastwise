@@ -1,0 +1,16 @@
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+captures/
+.kotlin/
+.DS_Store
+
+# The signing key and its password stay out of Git (see "Signing key" in the README).
+keystore/
+keystore.properties
+*.p12
+*.jks
+*.keystore

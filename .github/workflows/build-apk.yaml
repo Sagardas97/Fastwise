@@ -1,0 +1,109 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+# A newer push to the same branch replaces a run that's still going.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # GitHub's runner already has the Android SDK. Accept licenses and add only what this app needs.
+      - name: Prepare Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          echo "Using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;34.0.0" "platform-tools"
+          echo "sdk.dir=$SDK" > local.properties
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The signing key lives in this repository's secrets, never in the code.
+      # Copies of the repo (forks) have no key, so their builds use Android's debug key.
+      - name: Restore the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.FASTWISE_KEYSTORE_BASE64 }}
+          IS_FORK: ${{ github.event.repository.fork }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            if [ "$IS_FORK" = "true" ]; then
+              echo "No signing key in this copy of the repo, so this build uses Android's debug key."
+              exit 0
+            fi
+            echo "::error::The FASTWISE_KEYSTORE_BASE64 secret is missing, so the APK can't be signed with your key."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fastwise.p12"
+          echo "FASTWISE_KEYSTORE_PATH=$RUNNER_TEMP/fastwise.p12" >> "$GITHUB_ENV"
+
+      - name: Run unit tests and build release APK
+        env:
+          FASTWISE_KEYSTORE_PASSWORD: ${{ secrets.FASTWISE_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew testReleaseUnitTest assembleRelease --no-daemon --stacktrace
+
+      - name: Show the signing certificate
+        run: |
+          APKSIGNER=$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/*.apk | grep -E "certificate (DN|SHA-256)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Fastwise-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+  # Installs the APK built above on an Android emulator and checks Settings > Quit Fastwise
+  # really stops everything. See scripts/e2e-quit-test.sh.
+  quit-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Fastwise-apk
+          path: apk
+
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test Quit on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 4
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash scripts/e2e-quit-test.sh apk
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quit-test-report
+          path: e2e-output
+          if-no-files-found: ignore
