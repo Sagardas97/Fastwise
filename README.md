@@ -39,7 +39,7 @@ safe, like a password manager: without it, new versions can't install over the o
 Without a key, for example in someone else's copy of this repository, builds use Android's debug key. Those
 APKs work, but they can't update an app signed with your key.
 
-## After installing (S25 Ultra / One UI)
+## After installing (Samsung / One UI)
 - Allow notifications when asked. They power the live timer, the goal alert and encouragement nudges.
 - Settings > *Battery usage* inside Fastwise: allow it, so One UI never puts the timer to sleep.
 - Widget: long-press the home screen > Widgets > Fastwise.
